@@ -1,10 +1,10 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { motion, AnimatePresence } from 'motion/react';
+import { motion, AnimatePresence } from 'framer-motion'; // Fixed: Changed 'motion/react' to 'framer-motion'
 import { Menu, X, ArrowUp, Terminal, History, Settings, Zap, ShieldAlert } from 'lucide-react';
 
 type Message = {
   id: string;
-  role: 'user' | 'assistant';
+  role: 'user' | 'assistant' | 'system';
   content: string;
   timestamp: Date;
 };
@@ -23,6 +23,7 @@ export default function App() {
   const [inputValue, setInputValue] = useState('');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isFounderMode, setIsFounderMode] = useState(false);
+  const [systemStatus, setSystemStatus] = useState('Online');
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const scrollToBottom = () => {
@@ -33,32 +34,67 @@ export default function App() {
     scrollToBottom();
   }, [messages]);
 
-  const handleSendMessage = (e?: React.FormEvent) => {
+  const handleSendMessage = async (e?: React.FormEvent) => {
     e?.preventDefault();
-    if (!inputValue.trim()) return;
+    if (!inputValue.trim() || systemStatus === 'Processing') return;
 
+    const userText = inputValue.trim();
     const newUserMsg: Message = {
       id: Date.now().toString(),
       role: 'user',
-      content: inputValue.trim(),
+      content: userText,
       timestamp: new Date(),
     };
 
     setMessages((prev) => [...prev, newUserMsg]);
     setInputValue('');
+    setSystemStatus('Processing');
 
-    // Simulate AI response
-    setTimeout(() => {
+    try {
+      // CLOVER AI STUDIOS: Replace with your local Llama endpoint (e.g., Ollama or FastAPI)
+      const response = await fetch('http://localhost:11434/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: 'your-fine-tuned-llama-name', // UPDATE THIS with your model name
+          messages: [
+            // Optional: Inject your identity as a Mithila Artist/Dev into the system prompt
+            { 
+              role: 'system', 
+              content: isFounderMode 
+                ? "You are Phoebus V2 in Founder Mode. Prioritize technical efficiency, CloverTech protocols, and SNS game development logic." 
+                : "You are Phoebus V2, a helpful AI assistant for Clover AI Studios." 
+            },
+            ...messages.map(m => ({ role: m.role, content: m.content })),
+            { role: 'user', content: userText }
+          ],
+          stream: false,
+        }),
+      });
+
+      if (!response.ok) throw new Error('Model connection failed');
+
+      const data = await response.json();
+      
       const newAiMsg: Message = {
         id: (Date.now() + 1).toString(),
         role: 'assistant',
-        content: isFounderMode 
-          ? 'Founder Mode active. Executing elevated protocols. Acknowledged: ' + newUserMsg.content
-          : 'Processing request... ' + newUserMsg.content,
+        content: data.message?.content || data.response || "No sequence data returned.",
         timestamp: new Date(),
       };
+
       setMessages((prev) => [...prev, newAiMsg]);
-    }, 1000);
+    } catch (error) {
+      console.error("System Error:", error);
+      setMessages((prev) => [...prev, {
+        id: Date.now().toString(),
+        role: 'assistant',
+        content: "CRITICAL ERROR: Connection to Llama lost. Sequence terminated.",
+        timestamp: new Date(),
+      }]);
+    } finally {
+      setSystemStatus('Online');
+    }
   };
 
   return (
@@ -139,11 +175,11 @@ export default function App() {
           </div>
           <div className="flex items-center gap-2">
             <span className="font-mono text-[10px] sm:text-xs text-white/50 uppercase tracking-wider hidden sm:inline">
-              System Status: Online
+              System Status: {systemStatus}
             </span>
             <div className="relative flex h-2 w-2">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#00FF41] opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-2 w-2 bg-[#00FF41]"></span>
+              <span className={`animate-ping absolute inline-flex h-full w-full rounded-full ${systemStatus === 'Processing' ? 'bg-yellow-400' : 'bg-[#00FF41]'} opacity-75`}></span>
+              <span className={`relative inline-flex rounded-full h-2 w-2 ${systemStatus === 'Processing' ? 'bg-yellow-400' : 'bg-[#00FF41]'}`}></span>
             </div>
           </div>
         </header>
@@ -206,13 +242,14 @@ export default function App() {
                       handleSendMessage();
                     }
                   }}
-                  placeholder="Initiate sequence..."
+                  disabled={systemStatus === 'Processing'}
+                  placeholder={systemStatus === 'Processing' ? "Sequence in progress..." : "Initiate sequence..."}
                   className="w-full max-h-32 min-h-[44px] bg-transparent text-white placeholder:text-white/30 resize-none outline-none py-3 px-4 text-sm sm:text-base font-sans"
                   rows={1}
                 />
                 <button
                   type="submit"
-                  disabled={!inputValue.trim()}
+                  disabled={!inputValue.trim() || systemStatus === 'Processing'}
                   className="p-3 rounded-xl bg-white/5 text-white/50 hover:text-[#00FF41] hover:bg-[#00FF41]/10 disabled:opacity-50 disabled:hover:text-white/50 disabled:hover:bg-white/5 transition-all mb-0.5 mr-0.5"
                 >
                   <ArrowUp size={18} />
